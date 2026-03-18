@@ -1,6 +1,7 @@
 import customtkinter as ctk
 from tkinter import messagebox
 import os
+import random
 from spellchecker import SpellChecker
 from typing import Dict, Any, Optional, List, Tuple
 
@@ -11,6 +12,7 @@ from core.quiz_engine import QuizEngine
 
 # Import UI components
 from .sidebar import Sidebar
+from .timer_service import TimerService
 from .screens.welcome import WelcomeScreen
 from .screens.settings import SettingsScreen
 from .screens.quiz_config import QuizConfigScreen
@@ -38,7 +40,7 @@ class VocabQuizApp:
         self.current_student_data: Optional[Dict[str, Any]] = None
         self.current_vocab: Dict[str, str] = {}
         self.quiz_engine: Optional[QuizEngine] = None
-        self.timer_job: Optional[str] = None
+        self.timer_service: Optional[TimerService] = None
         
         # --- Grid Layout Configuration ---
         self.root.grid_columnconfigure(1, weight=1)
@@ -63,6 +65,7 @@ class VocabQuizApp:
         for widget in self.main_frame.winfo_children():
             widget.destroy()
         self._stop_timer()
+        self.timer_service = None
 
     def _toggle_appearance(self, is_dark: bool) -> None:
         """Toggle between light and dark mode."""
@@ -70,28 +73,23 @@ class VocabQuizApp:
 
     def _stop_timer(self) -> None:
         """Stop the quiz timer."""
-        if self.timer_job:
-            self.root.after_cancel(self.timer_job)
-            self.timer_job = None
+        if self.timer_service:
+            self.timer_service.stop()
         if self.quiz_engine:
             self.quiz_engine.timer_running = False
 
-    def _run_timer_tick(self) -> None:
-        """Run timer tick for quiz."""
-        if not self.quiz_engine or not self.quiz_engine.timer_running:
+    def _setup_timer_service(self) -> None:
+        """Initialize timer service for current quiz."""
+        if not self.quiz_engine or not isinstance(self.current_screen, QuizScreen):
             return
             
-        if self.quiz_engine.timer_tick():
-            # Time is up
-            self._handle_answer_submit("")
-            return
-        
-        # Update timer UI
-        if hasattr(self, 'current_screen') and isinstance(self.current_screen, QuizScreen):
-            self.current_screen.update_timer(self.quiz_engine.get_timer_progress())
-        
-        # Schedule next tick
-        self.timer_job = self.root.after(50, self._run_timer_tick)
+        self.timer_service = TimerService(
+            root=self.root,
+            quiz_engine=self.quiz_engine,
+            on_timer_update=self.current_screen.update_timer,
+            on_answer_submit=self._handle_answer_submit
+        )
+    
 
     def _update_sidebar_stats(self) -> None:
         """Update sidebar statistics."""
@@ -223,25 +221,40 @@ class VocabQuizApp:
         # Bind Enter key
         self.root.bind("<Return>", lambda e: self._handle_answer_submit(self.current_screen.get_input()))
         
+        # Initialize timer service
+        self._setup_timer_service()
+        
+        # Re-enable timer since _clear_main stopped it
+        if self.quiz_engine:
+            self.quiz_engine.timer_running = True
+        
         # Start quiz
         self._show_next_question()
-        self._run_timer_tick()
+        # Update timer bar for first question
+        self.current_screen.update_timer(self.quiz_engine.get_timer_progress())
+        if self.timer_service and self.quiz_engine and self.quiz_engine.word_time_limit > 0:
+            self.timer_service.start()
 
     def _show_next_question(self) -> None:
         """Show next question or finalize quiz."""
         if not self.quiz_engine:
             return
             
-        if not self.quiz_engine.next_question():
+        # Get current question first (don't advance yet)
+        current, total = self.quiz_engine.get_progress()
+        if current > total:
             self._finalize_quiz()
             return
             
         chi, _ = self.quiz_engine.get_current_word()
-        current, total = self.quiz_engine.get_progress()
         
         self.current_screen.update_progress(current, total)
         self.current_screen.show_question(chi)
         self.current_screen.update_timer(self.quiz_engine.get_timer_progress())
+        
+        # Advance index for next question
+        if not self.quiz_engine.next_question():
+            self._finalize_quiz()
 
     def _handle_answer_submit(self, user_input: str) -> None:
         """Handle answer submission."""

@@ -1,5 +1,4 @@
 import customtkinter as ctk
-import time
 from typing import Callable, Tuple, Optional
 
 
@@ -93,25 +92,29 @@ class QuizScreen:
             self.btn_submit.configure(text="Check Answer", fg_color="#3b82f6")
 
     def animate_feedback(self, text: str, color: str) -> None:
-        """Animate card flip with feedback."""
+        """Animate card flip with feedback using non-blocking Tkinter after() calls."""
         if not self.quiz_card or not self.label_main:
             return
             
-        # Step 1: Shrink
-        for w in range(100, 0, -10):
-            self.quiz_card.place(relx=0.5, rely=0.5, anchor="center", relwidth=w/100, relheight=1)
-            self.master.update_idletasks()
-            time.sleep(0.01)
-
-        # Update Content while 'invisible'
-        self.label_main.configure(text=text, text_color="white")
-        self.quiz_card.configure(fg_color=color)
-        
-        # Step 2: Expand
-        for w in range(0, 105, 10):
-            self.quiz_card.place(relx=0.5, rely=0.5, anchor="center", relwidth=w/100, relheight=1)
-            self.master.update_idletasks()
-            time.sleep(0.01)
+        self._animate_shrink(text, color, 100)
+    
+    def _animate_shrink(self, text: str, color: str, width_percent: int) -> None:
+        """Handle shrinking animation step."""
+        if width_percent >= 0:
+            self.quiz_card.place(relx=0.5, rely=0.5, anchor="center", relwidth=width_percent/100, relheight=1)
+            self.master.after(10, self._animate_shrink, text, color, width_percent - 10)
+        else:
+            # Update content after shrink is complete
+            self.label_main.configure(text=text, text_color="white")
+            self.quiz_card.configure(fg_color=color)
+            self._animate_expand(0)
+    
+    def _animate_expand(self, width_percent: int) -> None:
+        """Handle expanding animation step."""
+        if width_percent <= 100:
+            self.quiz_card.place(relx=0.5, rely=0.5, anchor="center", relwidth=width_percent/100, relheight=1)
+            self.master.after(10, self._animate_expand, width_percent + 10)
+        # No need for final step, animation completes
 
     def get_input(self) -> str:
         """Get current input value."""

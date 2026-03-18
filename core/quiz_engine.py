@@ -23,6 +23,7 @@ class QuizEngine:
     def start(self, question_count: Optional[int] = None, time_limit: int = 10) -> None:
         """Start a new quiz with specified number of questions and time limit per word."""
         self.word_time_limit = time_limit
+        self.word_time_left_ms = time_limit * 1000 if time_limit > 0 else 0
         self.current_idx = 0
         self.score = 0
         self.results_log = []
@@ -92,7 +93,10 @@ class QuizEngine:
             return False
         
         self.is_waiting_for_next = False
-        self.word_time_left_ms = self.word_time_limit * 1000
+        if self.word_time_limit > 0:
+            self.word_time_left_ms = self.word_time_limit * 1000
+        else:
+            self.word_time_left_ms = 0
         return True
 
     def finalize(self) -> Dict[str, Any]:
@@ -128,5 +132,5 @@ class QuizEngine:
     def get_timer_progress(self) -> float:
         """Get timer progress as a value between 0 and 1."""
         if self.word_time_limit <= 0:
-            return 1.0
-        return max(0, self.word_time_left_ms / (self.word_time_limit * 1000))
+            return 1.0  # Full progress for infinite timer
+        return max(0.0, min(1.0, self.word_time_left_ms / (self.word_time_limit * 1000)))
