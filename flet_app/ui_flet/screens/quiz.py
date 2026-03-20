@@ -10,29 +10,60 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 
-def QuizScreen(page: ft.Page, quiz_engine: QuizEngine, on_complete: Callable, debug_report: Optional[Callable[..., None]] = None):
+def QuizScreen(page: ft.Page, quiz_engine: QuizEngine, on_complete: Callable, debug_report: Optional[Callable[..., None]] = None, show_animations: bool = True, fps: int = 60):
     colors = palette(page)
-    progress_text = ft.Text("Question 1", size=14, weight=ft.FontWeight.BOLD, color=colors["muted"])
-    word_text = ft.Text("", size=48, weight=ft.FontWeight.BOLD, color=colors["text"])
     
-    # Timer bar
+    logger.info(f"[QuizScreen] Initializing - engine has {len(quiz_engine.questions) if hasattr(quiz_engine, 'questions') else 0} questions, current_idx={quiz_engine.current_idx if hasattr(quiz_engine, 'current_idx') else 'N/A'}")
+    if debug_report:
+        debug_report("quiz_screen_init", questions_count=len(quiz_engine.questions) if hasattr(quiz_engine, 'questions') else 0, current_idx=quiz_engine.current_idx if hasattr(quiz_engine, 'current_idx') else 0)
+    
+    # Progress UI
+    progress_text = ft.Text("Question 1", size=14, weight=ft.FontWeight.BOLD, color=colors["muted"])
     timer_bar = ft.ProgressBar(
         width=600,
         color=colors["primary"],
         bgcolor=colors["card_border"],
-        value=1.0
+        value=1.0,
     )
     timer_label = ft.Text("Time: 10s", size=12, color=colors["muted"])
-    timer_status = ft.Text("Timer: stopped", size=12, color=colors["muted"])
     
-    # Timer update function
+    # State tracking
     timer_running = [False]
     is_active = [True]
     timer_task = [None]
     advance_task = [None]
+    
+    word_text = ft.Text("", size=48, weight=ft.FontWeight.BOLD, color=colors["text"])
+
+    # Feedback Drawer (Slides up from bottom - less intrusive)
+    feedback_icon = ft.Icon(ft.Icons.CHECK_CIRCLE, size=24)
+    feedback_title = ft.Text("", size=16, weight=ft.FontWeight.BOLD)
+    feedback_subtitle = ft.Text("", size=14)
+    
+    # Build feedback drawer with conditional animations - smaller height
+    feedback_drawer_kwargs = {
+        "content": ft.Row([
+            ft.Container(width=20), # Smaller spacer
+            feedback_icon,
+            ft.Container(width=10),
+            ft.Column([
+                feedback_title,
+                feedback_subtitle
+            ], tight=True, spacing=2),
+        ], alignment=ft.MainAxisAlignment.START, vertical_alignment=ft.CrossAxisAlignment.CENTER),
+        "height": 80,  # Reduced height
+        "bgcolor": colors["success"], # Default to success
+        "padding": 15,
+        "offset": ft.Offset(0, 1), # Hidden initially (1 unit down = 100% of height)
+        "visible": False,  # Start hidden to prevent blocking
+    }
+    if show_animations:
+        # Fluidity-focused: Smooth slide animation
+        feedback_drawer_kwargs["animate_offset"] = ft.Animation(300, ft.AnimationCurve.EASE_OUT)
+    
+    feedback_drawer = ft.Container(**feedback_drawer_kwargs)
 
     def cleanup():
-        """Stop background work when leaving the quiz screen."""
         if debug_report:
             debug_report("quiz_cleanup")
         is_active[0] = False
@@ -40,378 +71,310 @@ def QuizScreen(page: ft.Page, quiz_engine: QuizEngine, on_complete: Callable, de
         quiz_engine.timer_running = False
         if timer_task[0]:
             timer_task[0].cancel()
-            timer_task[0] = None
         if advance_task[0]:
             advance_task[0].cancel()
-            advance_task[0] = None
+        # Clean up keyboard event handler
+        page.on_keyboard_event = None
 
     async def update_timer():
-        """Update timer bar on Flet's event loop."""
-        logger.debug(f"[TIMER] Thread started, time_limit={quiz_engine.word_time_limit}")
-        if debug_report:
-            debug_report("quiz_timer_started", time_limit=quiz_engine.word_time_limit)
-
-        if not is_active[0]:
-            return
-
+        if not is_active[0]: return
         if quiz_engine.word_time_limit <= 0:
-            # No timer, show full bar
             timer_bar.value = 1.0
             timer_label.value = "∞"
             page.update()
-            logger.debug("[TIMER] No time limit, showing infinity")
             return
 
+        # Fluidity-focused: Use FPS setting for smooth updates
+        # 60 FPS = 16.67ms, 120 FPS = 8.33ms
+        update_interval = 1.0 / fps  # Dynamic based on FPS setting
+        
         while timer_running[0] and is_active[0]:
             try:
-                time_up = quiz_engine.timer_tick(100)
+                # Accumulate time for accurate timer tracking
+                time_up = quiz_engine.timer_tick(int(update_interval * 1000))
                 progress = quiz_engine.get_timer_progress()
-                time_left_ms = quiz_engine.word_time_left_ms
-                time_left = max(0, (time_left_ms + 999) // 1000)
+                time_left = max(0, (quiz_engine.word_time_left_ms + 999) // 1000)
 
-                logger.debug(f"[TIMER] time_left_ms={time_left_ms}, progress={progress}")
                 timer_bar.value = progress
                 timer_label.value = f"Time: {time_left}s"
-                timer_status.value = "Timer: running"
-                if debug_report:
-                    debug_report("quiz_timer_tick", progress=progress, time_left=time_left, idx=quiz_engine.current_idx)
-
-                if progress > 0.5:
-                    timer_bar.color = colors["primary"]
-                elif progress > 0.25:
-                    timer_bar.color = colors["warning"]
-                else:
-                    timer_bar.color = colors["danger"]
+                
+                if progress > 0.5: timer_bar.color = colors["primary"]
+                elif progress > 0.25: timer_bar.color = colors["warning"]
+                else: timer_bar.color = colors["danger"]
 
                 page.update()
 
-                # Check if time is up - auto submit the answer
                 if time_up or progress <= 0:
-                    logger.debug("[TIMER] Time's up! Auto-submitting answer...")
                     timer_running[0] = False
-                    quiz_engine.timer_running = False
-                    timer_status.value = "Timer: timed out"
                     if is_active[0] and not quiz_engine.is_waiting_for_next:
-                        if debug_report:
-                            debug_report("quiz_timer_timeout")
-                        check_answer(None, is_timeout=True)
+                        # Use create_task instead of run_task to properly handle async function
+                        asyncio.create_task(check_answer(None, True))
                     break
 
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(update_interval)
                 if not quiz_engine.timer_running or quiz_engine.is_waiting_for_next:
                     break
             except asyncio.CancelledError:
-                logger.debug("[TIMER] Timer task cancelled")
                 break
-            except Exception as e:
-                logger.error(f"[TIMER] Error in timer thread: {e}")
+            except Exception:
                 break
-
-        logger.debug("[TIMER] Thread ended")
 
     def start_timer():
-        if not is_active[0]:
-            return
-        if timer_task[0]:
-            timer_task[0].cancel()
-            timer_task[0] = None
+        if not is_active[0]: return
+        if timer_task[0]: timer_task[0].cancel()
         quiz_engine.timer_running = True
         if quiz_engine.word_time_limit <= 0:
-            if debug_report:
-                debug_report("quiz_timer_disabled")
             timer_running[0] = False
             timer_bar.value = 1.0
-            timer_label.value = "∞"
-            timer_status.value = "Timer: off"
             page.update()
             return
-
         timer_running[0] = True
         timer_task[0] = page.run_task(update_timer)
 
-    async def delayed_advance():
-        try:
-            await asyncio.sleep(1.5)
-            if not is_active[0]:
-                return
-            advance_to_next_question()
-            logger.debug("[QUIZ] Delayed next completed")
-        except asyncio.CancelledError:
-            logger.debug("[QUIZ] Delayed next cancelled")
-
-    def schedule_next_question():
-        """Advance after feedback unless the screen has been cleaned up."""
-        if debug_report:
-            debug_report("quiz_schedule_next")
-        if advance_task[0]:
-            advance_task[0].cancel()
-        advance_task[0] = page.run_task(delayed_advance)
+    # Question Card with Animations
+    card_kwargs = {
+        "content": word_text,
+        "alignment": ft.Alignment(0, 0),
+        "width": 600,
+        "height": 300,
+        "bgcolor": colors["card_bg"],
+        "border_radius": 20,
+        "border": ft.border.all(2, colors["card_border"]),
+        "shadow": ft.BoxShadow(blur_radius=30, color="#00000014", offset=ft.Offset(0, 10)),
+    }
+    if show_animations:
+        # Fluidity-focused: Use smooth curves with longer durations for continuous motion
+        # EASE_OUT provides smooth, natural deceleration
+        card_kwargs["animate_scale"] = ft.Animation(400, ft.AnimationCurve.EASE_OUT)
+        card_kwargs["animate_offset"] = ft.Animation(300, ft.AnimationCurve.EASE_OUT)
     
-    # The Flashcard Container with Built-in Animations
-    card = ft.Container(
-        content=word_text,
-        alignment=ft.alignment.Alignment(0, 0),
-        width=600,
-        height=300,
-        bgcolor=colors["card_bg"],
-        border_radius=20,
-        border=ft.border.all(2, colors["card_border"]),
-        shadow=ft.BoxShadow(blur_radius=30, color="#00000014", offset=ft.Offset(0, 10)),
-        # Here is where the magic happens:
-        animate_scale=ft.Animation(300, ft.AnimationCurve.EASE_IN_OUT)
-    )
+    card = ft.Container(**card_kwargs)
 
     answer_input = ft.TextField(
-        hint_text="Type answer here...", 
+        hint_text="Type answer here...",
         text_align=ft.TextAlign.CENTER,
-        text_size=20,
+        text_size=24,
         autofocus=True,
-        read_only=True,
+        read_only=True,  # Must be True - keyboard handler processes input, not native input
         autocorrect=False,
         enable_suggestions=False,
-        smart_dashes_type=False,
-        smart_quotes_type=False,
-        height=70,
-        border_radius=10,
+        height=80,
+        border_radius=15,
         width=600,
         color=colors["text"],
         border_color=colors["card_border"],
         bgcolor=colors["card_alt_bg"],
     )
 
-    async def focus_answer_input():
-        await asyncio.sleep(0)
-        if not is_active[0] or answer_input.disabled:
-            return
-        try:
-            answer_input.focus()
-            page.update()
-        except Exception:
-            pass
-    
-    def skip_question():
-        """Skip the current question."""
-        logger.debug("[SKIP] Skipping question...")
-        if debug_report:
-            debug_report("quiz_skip_attempt", idx=quiz_engine.current_idx)
-        if not is_active[0] or quiz_engine.is_waiting_for_next:
-            return
+    def show_feedback_drawer(is_correct: bool, correct_word: str):
+        if is_correct:
+            feedback_drawer.bgcolor = "#D7FFB8" if page.theme_mode == ft.ThemeMode.LIGHT else "#233614"
+            feedback_icon.icon = ft.Icons.CHECK_CIRCLE
+            feedback_icon.color = "#58A700"
+            feedback_title.value = "Excellent!"
+            feedback_title.color = "#58A700"
+            feedback_subtitle.value = f"'{correct_word}' is correct."
+            feedback_subtitle.color = "#58A700"
+        else:
+            feedback_drawer.bgcolor = "#FFDFE0" if page.theme_mode == ft.ThemeMode.LIGHT else "#4A1A1C"
+            feedback_icon.icon = ft.Icons.CANCEL
+            feedback_icon.color = "#EA2B2B"
+            feedback_title.value = "Correct Answer:"
+            feedback_title.color = "#EA2B2B"
+            feedback_subtitle.value = correct_word
+            feedback_subtitle.color = "#EA2B2B"
         
-        # Stop the timer thread when skipping
-        timer_running[0] = False
-        quiz_engine.timer_running = False
-        
-        result = quiz_engine.check_answer("", skipped=True)
-        logger.debug(f"[SKIP] Result: {result}")
-        if debug_report:
-            debug_report("quiz_skip_result", result=result)
-        if result.get("status") == "invalid":
-            return
-        
-        # Animate feedback for skipped question
-        card.bgcolor = colors["muted"]
-        card.scale = 1.0
-            
-        word_text.value = result['correct']
-        word_text.color = "#FFFFFF"
-        answer_input.disabled = True
+        feedback_drawer.visible = True
+        feedback_drawer.offset = ft.Offset(0, 0)
         page.update()
-        
-        # Auto advance to next question
-        logger.debug("[SKIP] Scheduling next question in 1.5s")
-        schedule_next_question()
+
+    def hide_feedback_drawer():
+        feedback_drawer.visible = False
+        feedback_drawer.offset = ft.Offset(0, 1)
+        page.update()
+
+    async def shake_card():
+        if not show_animations: return
+        # Quick shake sequence
+        for off in [0.02, -0.02, 0.01, -0.01, 0]:
+            card.offset = ft.Offset(off, 0)
+            page.update()
+            await asyncio.sleep(0.05)
 
     def show_current_question():
-        if not is_active[0]:
+        if not is_active[0]: return
+        
+        logger.info(f"[show_current_question] current_idx={quiz_engine.current_idx}, questions_count={len(quiz_engine.questions) if hasattr(quiz_engine, 'questions') and quiz_engine.questions else 0}")
+        if debug_report:
+            debug_report("show_current_question", current_idx=quiz_engine.current_idx, questions_count=len(quiz_engine.questions) if hasattr(quiz_engine, 'questions') and quiz_engine.questions else 0)
+        
+        # Safety check - make sure we have questions
+        if not hasattr(quiz_engine, 'questions') or not quiz_engine.questions:
+            logger.error("No questions available in quiz engine")
+            if debug_report:
+                debug_report("quiz_no_questions_error")
+            on_complete()
             return
+            
         if quiz_engine.current_idx >= len(quiz_engine.questions):
-            timer_running[0] = False
-            quiz_engine.timer_running = False
+            logger.info(f"[show_current_question] No more questions, current_idx={quiz_engine.current_idx}, len={len(quiz_engine.questions)}")
             on_complete()
             return
 
-        chi, _ = quiz_engine.get_current_word()
-        current, total = quiz_engine.get_progress()
+        hide_feedback_drawer()
+        
+        try:
+            chi, _ = quiz_engine.get_current_word()
+            current, total = quiz_engine.get_progress()
+            logger.info(f"[show_current_question] Displaying question {current}/{total}: '{chi}'")
+        except Exception as e:
+            logger.error(f"Error getting current question: {e}")
+            if debug_report:
+                debug_report("quiz_question_error", error=str(e))
+            on_complete()
+            return
 
         # Reset card
-        card.bgcolor = colors["card_bg"]
         card.scale = 1.0
-        word_text.value = chi
+        card.bgcolor = colors["card_bg"]
+        word_text.value = chi or "Loading..."
         word_text.color = colors["text"]
 
-        # Reset timer
-        if quiz_engine.word_time_limit > 0:
-            timer_bar.value = 1.0
-            timer_label.value = f"Time: {quiz_engine.word_time_limit}s"
-            timer_status.value = "Timer: running"
-        else:
-            timer_bar.value = 1.0
-            timer_label.value = "∞"
-            timer_status.value = "Timer: off"
-
         progress_text.value = f"Question {current} of {total}"
-        if debug_report:
-            debug_report("quiz_show_question", current=current, total=total, prompt=chi)
         answer_input.value = ""
         answer_input.disabled = False
+        
+        # Single page update for better performance
         page.update()
-        page.run_task(focus_answer_input)
-
-        # Start timer for this question
+        
+        # Ensure focus after UI reset
+        answer_input.focus()
+        
         start_timer()
+        logger.info(f"[show_current_question] Timer started, question displayed")
 
-    def advance_to_next_question():
-        if not is_active[0]:
-            return
-        advance_task[0] = None
-        if debug_report:
-            debug_report("quiz_advance_next", next_idx=quiz_engine.current_idx + 1)
-        if not quiz_engine.next_question():
-            timer_running[0] = False
-            quiz_engine.timer_running = False
-            on_complete()
-            return
-        show_current_question()
-
-    def check_answer(e, is_timeout: bool = False):
-        logger.debug(f"[CHECK_ANSWER] Event handler started, is_timeout={is_timeout}")
-        if debug_report:
-            debug_report("quiz_check_answer_attempt", is_timeout=is_timeout, raw_value=answer_input.value or "", idx=quiz_engine.current_idx)
-        if not is_active[0] or quiz_engine.is_waiting_for_next:
-            logger.debug("[CHECK_ANSWER] Screen inactive or waiting for next question")
-            return
-
-        if not answer_input.value and not is_timeout:
-            logger.debug("[CHECK_ANSWER] No input, returning early")
-            return
-
-        # Stop the timer thread when checking answer
+    async def skip_question(e=None):
+        if not is_active[0] or quiz_engine.is_waiting_for_next: return
+        
         timer_running[0] = False
-        quiz_engine.timer_running = False
-
-        result = quiz_engine.check_answer(answer_input.value if answer_input.value else "", is_timeout=is_timeout)
-        if debug_report:
-            debug_report("quiz_check_answer_result", result=result)
-        if result.get("status") == "invalid":
-            logger.debug("[CHECK_ANSWER] Invalid result received, returning")
-            return
-        logger.debug(f"[CHECK_ANSWER] Result: is_correct={result['is_correct']}, correct={result['correct']}")
-        
-        # Animate feedback!
-        if result['is_correct']:
-            card.bgcolor = colors["success"]
-            card.scale = 1.05 # Slight pop effect
-        else:
-            card.bgcolor = colors["danger"]
-            card.scale = 0.95 # Slight shrink effect
-            
-        word_text.value = result['correct']
-        word_text.color = "#FFFFFF"
+        result = quiz_engine.check_answer("", skipped=True)
         answer_input.disabled = True
-        page.update()
         
-        # Use threading.Timer instead of blocking time.sleep() to avoid freezing UI
-        logger.debug("[CHECK_ANSWER] Scheduling next question in 1.5s")
-        schedule_next_question()
+        show_feedback_drawer(False, result['correct'])
         
-        logger.debug("[CHECK_ANSWER] Event handler completed")
+        await asyncio.sleep(1.2)  # Reduced from 2.0 to 1.2 seconds
+        advance_to_next()
 
-    def handle_submit(e):
-        """Handle Enter key or submit button click."""
-        logger.debug(f"[ENTER_KEY] handle_submit called, input='{answer_input.value}'")
-        if answer_input.value.strip():
-            # If there's text, submit the answer
-            logger.debug("[ENTER_KEY] Text found, submitting answer")
-            check_answer(e)
-        else:
-            # If empty, skip the question
-            logger.debug("[ENTER_KEY] Empty field, skipping question")
-            skip_question()
-
-    # Set up Enter key handler
-    answer_input.on_submit = handle_submit
-
-    def handle_check_button(e):
-        """Handle Check Answer button click - use same logic as Enter key."""
-        if answer_input.value.strip():
-            # If there's text, submit the answer
-            logger.debug("[CHECK_BTN] Text found, submitting answer")
-            check_answer(e)
-        else:
-            # If empty, skip the question
-            logger.debug("[CHECK_BTN] Empty field, skipping question")
-            skip_question()
-
-    def handle_skip_button(e):
-        """Handle skip button click."""
-        skip_question()
-
-    submit_btn = ft.ElevatedButton(
-        "Check Answer",
-        height=50,
-        width=270,
-        on_click=handle_check_button
-    )
-    skip_btn = ft.ElevatedButton(
-        "Skip Question",
-        height=50,
-        width=270,
-        bgcolor=colors["muted"],
-        color=colors["primary_text"],
-        on_click=handle_skip_button
-    )
-
-    def handle_page_key_event(e):
-        """Handle keyboard events at page level."""
-        if not is_active[0] or answer_input.disabled:
+    async def check_answer(e, is_timeout: bool = False):
+        if not is_active[0] or quiz_engine.is_waiting_for_next: return
+        
+        # If empty and not timeout, treat as skip
+        if not answer_input.value and not is_timeout:
+            await skip_question()
             return
 
+        timer_running[0] = False
+        result = quiz_engine.check_answer(answer_input.value or "", is_timeout=is_timeout)
+        if result.get("status") == "invalid": return
+        
+        answer_input.disabled = True
+        
+        if result.get('is_correct', False):
+            if show_animations:
+                card.scale = 1.1 # Elastic pop
+            page.update()
+        else:
+            if show_animations:
+                await shake_card() # Shake
+            
+        show_feedback_drawer(result.get('is_correct', False), result.get('correct', '???'))
+        
+        # Advance after delay - reduced from 2.0 to 1.2 seconds
+        await asyncio.sleep(1.2)
+        advance_to_next()
+
+    def advance_to_next():
+        if not is_active[0]: return
+        if not quiz_engine.next_question():
+            on_complete()
+        else:
+            show_current_question()
+
+    # Layout
+    main_content = ft.Column([
+        progress_text,
+        timer_bar,
+        ft.Row([timer_label], alignment=ft.MainAxisAlignment.END, width=600),
+        ft.Container(height=20),
+        card,
+        ft.Container(height=40),
+        answer_input,
+        ft.Row([
+            ft.ElevatedButton(
+                "CHECK ANSWER",
+                style=ft.ButtonStyle(
+                    color=colors["primary_text"],
+                    bgcolor=colors["primary"],
+                    padding=25,
+                    shape=ft.RoundedRectangleBorder(radius=12),
+                ),
+                expand=True,
+                on_click=check_answer
+            ),
+            ft.ElevatedButton(
+                "SKIP",
+                style=ft.ButtonStyle(
+                    color=colors["text"],
+                    bgcolor=colors["card_alt_bg"],
+                    padding=25,
+                    shape=ft.RoundedRectangleBorder(radius=12),
+                ),
+                width=150,
+                on_click=skip_question
+            ),
+        ], width=600, spacing=10),
+        ft.Container(height=100),  # Add padding at bottom to prevent feedback drawer blocking
+    ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, expand=True)
+
+    # Wrap main_content in a container that fills space but leaves room for drawer
+    main_container = ft.Container(
+        content=main_content,
+        expand=True,
+        alignment=ft.alignment.Alignment(0, 0),
+    )
+
+    # Stack with drawer using visible property to prevent blocking when hidden
+    root_stack = ft.Stack([
+        main_container,
+        feedback_drawer,  # Direct placement - will be positioned by its offset
+    ], expand=True)
+
+    # Global keyboard handler to capture input even when TextField isn't focused
+    async def handle_page_key_event(e):
+        if not is_active[0] or answer_input.disabled: return
         if e.key == "Enter":
-            logger.debug("[PAGE_KEY] Enter pressed at page level")
-            e.data = ""  # Prevent default beep sound
-            handle_submit(None)
-            return
-
-        if e.key == "Backspace":
+            await check_answer(None)
+        elif e.key == "Backspace":
             answer_input.value = (answer_input.value or "")[:-1]
             page.update()
-            return
-
-        if e.key == "Space":
-            answer_input.value = (answer_input.value or "") + " "
-            page.update()
-            return
-
-        if len(e.key) == 1 and not any([getattr(e, "ctrl", False), getattr(e, "alt", False), getattr(e, "meta", False)]):
-            key_text = e.key
-            if key_text.isalpha() and not getattr(e, "shift", False):
-                key_text = key_text.lower()
-            answer_input.value = (answer_input.value or "") + key_text
+        elif len(e.key) == 1:
+            # Preserve case when Shift is pressed, otherwise convert to lowercase
+            # e.key returns uppercase for letters, so we check e.shift to preserve case
+            char = e.key.lower() if not e.shift else e.key
+            answer_input.value = (answer_input.value or "") + char
             page.update()
 
-    # Attach page-level keyboard handler
     page.on_keyboard_event = handle_page_key_event
-
-    def start():
+    
+    container = ft.Container(content=root_stack, expand=True)
+    container.cleanup = cleanup
+    
+    # Use a deferred task to start the quiz after UI is ready
+    def deferred_start():
+        logger.info("[QuizScreen] Starting quiz with deferred call")
+        if debug_report:
+            debug_report("quiz_deferred_start")
         show_current_question()
-
-    content = ft.Column(
-        controls=[
-            progress_text,
-            timer_bar,
-            ft.Row([timer_label, ft.Container(width=20), timer_status]),
-            card,
-            ft.Container(height=20),
-            answer_input,
-            ft.Row(
-                controls=[submit_btn, skip_btn],
-                spacing=5,
-                alignment=ft.MainAxisAlignment.CENTER
-            ),
-        ],
-        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        expand=True
-    )
-    content.cleanup = cleanup
-    content.start = start
-    return content
+    
+    container.start = deferred_start
+    return container

@@ -7,7 +7,11 @@ class SettingsScreen(ft.Column):
         self,
         page: ft.Page,
         current_resolution: Tuple[int, int],
+        show_animations: bool,
+        current_fps: int,
         on_resolution_change: Callable[[Tuple[int, int]], None],
+        on_animations_toggle: Callable[[bool], None],
+        on_fps_change: Callable[[int], None],
         on_reset_session: Callable,
         on_back: Callable,
         on_view_history: Callable,
@@ -19,7 +23,11 @@ class SettingsScreen(ft.Column):
         super().__init__(expand=True)
         self.host_page = page
         self.current_resolution = current_resolution
+        self.show_animations = show_animations
+        self.current_fps = current_fps
         self.on_resolution_change = on_resolution_change
+        self.on_animations_toggle = on_animations_toggle
+        self.on_fps_change = on_fps_change
         self.on_reset_session = on_reset_session
         self.on_back = on_back
         self.on_view_history = on_view_history
@@ -50,6 +58,7 @@ class SettingsScreen(ft.Column):
             width=320,
             color=colors["text"],
             border_color=colors["card_border"],
+            on_select=lambda e: self._apply_resolution(),
         )
 
         return [
@@ -110,6 +119,48 @@ class SettingsScreen(ft.Column):
                             on_click=self.on_reset_session,
                             event_name="settings_reset_session",
                         ),
+                    ])
+                )
+            ),
+
+            ft.Card(
+                content=ft.Container(
+                    padding=15,
+                    bgcolor=colors["card_bg"],
+                    content=ft.Column([
+                        ft.Row([
+                            ft.Icon(ft.Icons.COLOR_LENS_OUTLINED),
+                            ft.Text("Visuals", size=18, weight=ft.FontWeight.BOLD, color=colors["text"]),
+                        ], spacing=15),
+                        ft.Divider(height=10),
+                        ft.Row([
+                            ft.Column([
+                                ft.Text("Enable Animations", size=15, color=colors["text"]),
+                                ft.Text("Toggle Duolingo-style fly-ins and feedback effects.", size=12, color=colors["muted"])
+                            ], expand=True),
+                            ft.Switch(
+                                value=self.show_animations,
+                                on_change=lambda e: self.on_animations_toggle(e.control.value)
+                            )
+                        ], spacing=15),
+                        ft.Divider(height=15),
+                        ft.Row([
+                            ft.Column([
+                                ft.Text("Animation FPS", size=15, color=colors["text"]),
+                                ft.Text("Higher FPS = smoother animations (60 or 120).", size=12, color=colors["muted"])
+                            ], expand=True),
+                            ft.Dropdown(
+                                value=str(self.current_fps),
+                                options=[
+                                    ft.dropdown.Option("60", "60 FPS (Smooth)"),
+                                    ft.dropdown.Option("120", "120 FPS (Ultra Fluid)"),
+                                ],
+                                width=180,
+                                color=colors["text"],
+                                border_color=colors["card_border"],
+                                on_select=lambda e: self.on_fps_change(int(e.control.value))
+                            )
+                        ], spacing=15)
                     ])
                 )
             ),
