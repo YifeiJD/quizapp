@@ -42,3 +42,8 @@ saved_lists/*.txt
 saved_lists/*.docx
 *.txt
 *.docx
+
+# Debugging and Logs
+debug_reports/
+*.log
+flet_test_picker.py
