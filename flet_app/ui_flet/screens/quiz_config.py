@@ -15,6 +15,10 @@ class QuizConfigScreen(ft.Container):
 
         self.content = self._build_ui()
         self.alignment = ft.alignment.Alignment(0, 0)
+        
+        self._starting = False
+        # Allow Enter key to trigger quiz start globally on this screen
+        self.host_page.on_keyboard_event = self._handle_key_event
 
     def _safe_update(self) -> None:
         """Update only after the control has been mounted on a page."""
@@ -40,6 +44,7 @@ class QuizConfigScreen(ft.Container):
             on_change=self._clear_feedback,
             color=colors["text"],
             border_color=colors["card_border"],
+            on_submit=self._on_start_click,
         )
 
         timer_options = ["5s", "10s", "15s", "∞", "Custom"]
@@ -58,6 +63,7 @@ class QuizConfigScreen(ft.Container):
             on_change=self._clear_feedback,
             color=colors["text"],
             border_color=colors["card_border"],
+            on_submit=self._on_start_click,
         )
         self.feedback_text = ft.Text("", color=colors["danger"], visible=False)
         
@@ -89,7 +95,8 @@ class QuizConfigScreen(ft.Container):
             padding=40,
             bgcolor=colors["card_bg"],
             border=ft.border.all(1, colors["card_border"]),
-            border_radius=15,
+            border_radius=20,
+            shadow=ft.BoxShadow(blur_radius=25, color="#00000014", offset=ft.Offset(0, 8)),
         )
         return form_card
 
@@ -139,7 +146,14 @@ class QuizConfigScreen(ft.Container):
         self.custom_timer.visible = value == "Custom"
         self._safe_update()
 
+    def _handle_key_event(self, e):
+        if getattr(e, "key", None) == "Enter":
+            self._on_start_click(e)
+
     def _on_start_click(self, e):
+        if getattr(self, "_starting", False):
+            return
+            
         try:
             if self.debug_report:
                 self.debug_report(
@@ -151,7 +165,10 @@ class QuizConfigScreen(ft.Container):
             self._clear_feedback()
 
             count_raw = (self.count_input.value or "").strip()
-            count = int(count_raw) if count_raw else self.total_available
+            # Robustly parse numeric value (e.g., "5 words" -> 5)
+            count_clean = "".join(filter(str.isdigit, count_raw))
+            count = int(count_clean) if count_clean else self.total_available
+            
             if count <= 0 or count > self.total_available:
                 self._show_feedback(
                     f"Enter a word count between 1 and {self.total_available}.",
@@ -171,12 +188,17 @@ class QuizConfigScreen(ft.Container):
                 if not custom_raw:
                     self._show_feedback("Enter a custom number of seconds.", self.custom_timer)
                     return
-                time_limit = int(custom_raw)
+                # Robustly parse numeric value (e.g., "5 s" -> 5)
+                custom_clean = "".join(filter(str.isdigit, custom_raw))
+                if not custom_clean:
+                    self._show_feedback("Please enter valid whole numbers.", self.custom_timer)
+                    return
+                time_limit = int(custom_clean)
                 if time_limit <= 0:
                     self._show_feedback("Custom time must be greater than 0 seconds.", self.custom_timer)
                     return
             else:
-                time_limit = int(timer_val.replace("s", ""))
+                time_limit = int(timer_val.replace("s", "").strip())
             
             config = {
                 "word_count": str(count),
@@ -185,7 +207,21 @@ class QuizConfigScreen(ft.Container):
             }
             if self.debug_report:
                 self.debug_report("quiz_config_start_success", count=count, time_limit=time_limit, config=config)
+            self._starting = True
             self.on_start_quiz(count, time_limit, config)
-        except (ValueError, TypeError):
-            field = self.custom_timer if self.timer_choice == "Custom" else self.count_input
-            self._show_feedback("Please enter valid whole numbers.", field)
+        except (ValueError, TypeError) as ex:
+            # If it's a parsing error of our expected fields, show the friendly message
+            if "int()" in str(ex) or "isdigit" in str(ex):
+                field = self.custom_timer if self.timer_choice == "Custom" else self.count_input
+                self._show_feedback("Please enter valid whole numbers.", field)
+            else:
+                # Otherwise, it might be a code error (like missing arguments)
+                if self.debug_report:
+                    import traceback
+                    self.debug_report("quiz_config_critical_error", error=str(ex), traceback=traceback.format_exc())
+                self._show_feedback(f"A system error occurred: {ex}")
+        except Exception as ex:
+            if self.debug_report:
+                import traceback
+                self.debug_report("quiz_config_unexpected_error", error=str(ex), traceback=traceback.format_exc())
+            self._show_feedback(f"Unexpected error: {ex}")

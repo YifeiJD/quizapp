@@ -16,6 +16,7 @@ def WelcomeScreen(
     on_start: Callable[[str, str], None],
     on_quit_session: Callable,
     selected_file: str = "",
+    has_session_history: bool = False,
     debug_report: Optional[Callable[..., None]] = None,
 ):
     colors = palette(page)
@@ -37,9 +38,9 @@ def WelcomeScreen(
             width=500,
             padding=40,
             bgcolor=colors["card_bg"],
-            border_radius=15,
+            border_radius=20,
             border=ft.border.all(2, colors["danger"]),
-            shadow=ft.BoxShadow(blur_radius=15, color="#0000001F", offset=ft.Offset(0, 4))
+            shadow=ft.BoxShadow(blur_radius=25, color="#00000014", offset=ft.Offset(0, 8))
         )
         return ft.Container(content=error_card, alignment=ft.alignment.Alignment(0, 0), expand=True)
     
@@ -67,8 +68,20 @@ def WelcomeScreen(
             return
         on_start(student_name, file_dropdown.value)
 
+    def on_key(e):
+        if e.key == "Enter":
+            handle_start(None)
+
+    page.on_keyboard_event = on_key
+
+    def cleanup():
+        page.on_keyboard_event = None
+
     header_text = "Study Dashboard" if student_name else "Welcome to Vocab Master"
-    sub_text = f"Ready for another round, {student_name}?" if student_name else "Please identify yourself to begin."
+    if student_name:
+        sub_text = f"Ready for another round, {student_name}?" if has_session_history else f"Welcome, {student_name}! Let's get started."
+    else:
+        sub_text = "Please identify yourself to begin."
     total_learned = (student_data or {}).get("total_words_learned", 0)
 
     # Modern Card Layout
@@ -111,8 +124,10 @@ def WelcomeScreen(
         padding=40,
         bgcolor=colors["card_bg"],
         border=ft.border.all(1, colors["card_border"]),
-        border_radius=15,
-        shadow=ft.BoxShadow(blur_radius=15, color="#0000001F", offset=ft.Offset(0, 4))
+        border_radius=20,
+        shadow=ft.BoxShadow(blur_radius=25, color="#00000014", offset=ft.Offset(0, 8))
     )
 
-    return ft.Container(content=form_card, alignment=ft.alignment.Alignment(0, 0), expand=True)
+    container = ft.Container(content=form_card, alignment=ft.alignment.Alignment(0, 0), expand=True)
+    container.cleanup = cleanup
+    return container

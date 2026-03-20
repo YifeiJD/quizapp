@@ -6,11 +6,9 @@ from typing import Dict, List, Tuple, Optional, Any
 from spellchecker import SpellChecker
 from core.debug_report import emit_debug_report
 
-logger = logging.getLogger(__name__)
-
-
 class QuizEngine:
-    def __init__(self, vocab: Dict[str, str], spell_checker: SpellChecker):
+    def __init__(self, logger: logging.Logger, vocab: Dict[str, str], spell_checker: SpellChecker):
+        self.logger = logger
         self.vocab = vocab
         self.spell = spell_checker
         
@@ -43,8 +41,8 @@ class QuizEngine:
 
     def _report(self, event: str, **details: Any) -> None:
         emit_debug_report(
-            logger,
-            "ENGINE-REPORT",
+            self.logger,
+            "DEBUG-REPORT",
             event,
             details=details,
             state=self._state_snapshot(),
@@ -84,6 +82,7 @@ class QuizEngine:
             requested_question_count=question_count,
             actual_question_count=len(self.questions),
             time_limit=time_limit,
+            shuffled_questions=[q[1] for q in self.questions]
         )
 
     def get_current_word(self) -> Tuple[str, str]:
@@ -98,10 +97,10 @@ class QuizEngine:
 
     def check_answer(self, user_input: str, is_timeout: bool = False, skipped: bool = False) -> Dict[str, Any]:
         """Check user answer and return result."""
-        logger.debug(f"[CHECK_ANSWER] Called with user_input='{user_input}', is_timeout={is_timeout}, skipped={skipped}")
+        self.logger.debug(f"[CHECK_ANSWER] Called with user_input='{user_input}', is_timeout={is_timeout}, skipped={skipped}")
         
         if self.is_waiting_for_next or self.current_idx >= len(self.questions):
-            logger.warning("[CHECK_ANSWER] Invalid state - waiting_for_next or no more questions")
+            self.logger.warning("[CHECK_ANSWER] Invalid state - waiting_for_next or no more questions")
             self._report(
                 "answer_rejected",
                 user_input=user_input,
@@ -122,9 +121,9 @@ class QuizEngine:
         # If case-insensitive fails, optionally check spell corrections
         # (but don't require them - user's answer should be accepted if matches case-insensitive)
         if not is_correct:
-            logger.debug(f"[CHECK_ANSWER] Case-insensitive match failed: '{user_input.lower()}' != '{correct.lower()}'")
+            self.logger.debug(f"[CHECK_ANSWER] Case-insensitive match failed: '{user_input.lower()}' != '{correct.lower()}'")
         else:
-            logger.debug(f"[CHECK_ANSWER] Case-insensitive match succeeded")
+            self.logger.debug(f"[CHECK_ANSWER] Case-insensitive match succeeded")
 
         # Prepare result
         if skipped:
@@ -148,7 +147,7 @@ class QuizEngine:
             "skipped": skipped
         }
         self.results_log.append(result)
-        logger.debug(f"[CHECK_ANSWER] Final result: status={status}, is_correct={is_correct}")
+        self.logger.debug(f"[CHECK_ANSWER] Final result: status={status}, is_correct={is_correct}")
         self._report(
             "answer_checked",
             user_input=user_input,

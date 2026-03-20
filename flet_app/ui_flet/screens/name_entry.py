@@ -13,7 +13,7 @@ def NameEntryScreen(page: ft.Page, on_name_submit: Callable[[str], None], debug_
     colors = palette(page)
     name_input = ft.TextField(
         label="Your Name",
-        hint_text="e.g. Yifei Zhang",
+        hint_text="e.g. John Doe",
         border_color=colors["card_border"],
         color=colors["text"],
         autofocus=True
@@ -63,8 +63,8 @@ def NameEntryScreen(page: ft.Page, on_name_submit: Callable[[str], None], debug_
         padding=40,
         bgcolor=colors["card_bg"],
         border=ft.border.all(1, colors["card_border"]),
-        border_radius=15,
-        shadow=ft.BoxShadow(blur_radius=15, color="#0000001F", offset=ft.Offset(0, 4))
+        border_radius=20,
+        shadow=ft.BoxShadow(blur_radius=25, color="#00000014", offset=ft.Offset(0, 8))
     )
 
     return ft.Container(content=form_card, alignment=ft.alignment.Alignment(0, 0), expand=True)

@@ -4,6 +4,7 @@ import os
 import random
 from spellchecker import SpellChecker
 from typing import Dict, Any, Optional, List, Tuple
+import logging
 
 # Import core modules
 from core.database import StudentDatabase
@@ -30,8 +31,9 @@ class VocabQuizApp:
         self.root.minsize(900, 600)
         
         # --- Initialize Core Services ---
-        self.db = StudentDatabase()
-        self.file_parser = VocabFileParser()
+        self.logger = logging.getLogger(__name__)
+        self.db = StudentDatabase(self.logger)
+        self.file_parser = VocabFileParser(self.logger)
         self.spell = SpellChecker()
         
         # --- Session State ---

@@ -1,26 +1,35 @@
 import os
 import json
+import logging
 from typing import Dict, Any, Optional
+from core.debug_report import emit_debug_report
 
 
 class StudentDatabase:
-    def __init__(self, db_path: str = "student_records.json"):
+    def __init__(self, logger: logging.Logger, db_path: str = "student_records.json"):
+        self.logger = logger
         self.db_path = db_path
         self.database: Dict[str, Any] = {}
         self.load()
 
     def load(self) -> None:
         """Load or create the persistent JSON database."""
+        emit_debug_report(self.logger, "DEBUG-REPORT", "db_load_started", {"path": self.db_path})
         if os.path.exists(self.db_path):
             with open(self.db_path, "r", encoding="utf-8") as f:
                 self.database = json.load(f)
+            emit_debug_report(self.logger, "DEBUG-REPORT", "db_load_completed", {"path": self.db_path, "students": len(self.database)})
         else:
             self.database = {}
+            emit_debug_report(self.logger, "DEBUG-REPORT", "db_created", {"path": self.db_path})
+
 
     def save(self) -> None:
         """Save all student records to the local file."""
+        emit_debug_report(self.logger, "DEBUG-REPORT", "db_save_started", {"path": self.db_path, "students": len(self.database)})
         with open(self.db_path, "w", encoding="utf-8") as f:
             json.dump(self.database, f, indent=4)
+        emit_debug_report(self.logger, "DEBUG-REPORT", "db_save_completed", {"path": self.db_path})
 
     def get_student(self, name: str) -> Optional[Dict[str, Any]]:
         """Get student data by name."""

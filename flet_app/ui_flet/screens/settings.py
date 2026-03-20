@@ -157,11 +157,6 @@ class SettingsScreen(ft.Column):
                     ])
                 )
             ),
-
-            ft.Row(
-                controls=[ft.ElevatedButton("Back", on_click=lambda e: self.on_back())],
-                alignment=ft.MainAxisAlignment.END
-            )
         ]
 
     def _build_settings_row(self, title, subtitle, icon, on_click, event_name: Optional[str] = None):

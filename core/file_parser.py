@@ -11,13 +11,13 @@ except ImportError:
     Document = None
 
 
-logger = logging.getLogger(__name__)
 ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DEFAULT_SAVE_DIR = os.path.join(ROOT_DIR, "saved_lists")
 
 
 class VocabFileParser:
-    def __init__(self, save_dir: str = DEFAULT_SAVE_DIR):
+    def __init__(self, logger: logging.Logger, save_dir: str = DEFAULT_SAVE_DIR):
+        self.logger = logger
         self.save_dir = os.path.abspath(save_dir)
         self.last_error: Optional[str] = None
         os.makedirs(self.save_dir, exist_ok=True)
@@ -27,8 +27,8 @@ class VocabFileParser:
         self.last_error = None
         vocab = {}
         emit_debug_report(
-            logger,
-            "PARSER-REPORT",
+            self.logger,
+            "DEBUG-REPORT",
             "parse_started",
             details={"path": path, "save_dir": self.save_dir},
         )
@@ -52,8 +52,8 @@ class VocabFileParser:
         except Exception as e:
             self.last_error = f"Could not read file: {e}"
         emit_debug_report(
-            logger,
-            "PARSER-REPORT",
+            self.logger,
+            "DEBUG-REPORT",
             "parse_completed",
             details={
                 "path": path,
@@ -77,21 +77,21 @@ class VocabFileParser:
             dest_path = os.path.join(self.save_dir, os.path.basename(path))
             shutil.copy(path, dest_path)
             emit_debug_report(
-                logger,
-                "PARSER-REPORT",
+                self.logger,
+                "DEBUG-REPORT",
                 "file_imported",
                 details={"source": path, "destination": dest_path},
             )
             return dest_path
-        emit_debug_report(logger, "PARSER-REPORT", "file_import_cancelled")
+        emit_debug_report(self.logger, "DEBUG-REPORT", "file_import_cancelled")
         return None
 
     def list_available_files(self) -> List[str]:
         """List all available vocabulary files in the save directory."""
         files = [f for f in os.listdir(self.save_dir) if f.endswith(('.txt', '.docx'))]
         emit_debug_report(
-            logger,
-            "PARSER-REPORT",
+            self.logger,
+            "DEBUG-REPORT",
             "files_listed",
             details={"count": len(files), "files": files},
         )

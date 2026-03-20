@@ -32,17 +32,30 @@ def window_size_for_resolution(app_resolution: tuple[int, int]) -> tuple[int, in
 
 def configure_page(page: ft.Page, app_resolution: tuple[int, int]) -> None:
     page.title = "Vocab Master"
+    
+    literature_font_stack = "Bookerly, 'Palatino Linotype', Palatino, Georgia, 'Times New Roman', serif"
+    
     page.theme = ft.Theme(
-        color_scheme_seed="#2563EB",
-        font_family="Avenir",
+        color_scheme_seed="#4F46E5",  # Sleek modern Indigo
+        font_family=literature_font_stack,
         use_material3=True,
-        scaffold_bgcolor="#E5E7EB",
+        scaffold_bgcolor="#F3F4F6",  # Softer gray
+        visual_density=ft.VisualDensity.COMFORTABLE,
+        page_transitions=ft.PageTransitionsTheme(
+            macos=ft.PageTransitionTheme.FADE_UPWARDS,
+            windows=ft.PageTransitionTheme.FADE_UPWARDS,
+        ),
     )
     page.dark_theme = ft.Theme(
-        color_scheme_seed="#60A5FA",
-        font_family="Avenir",
+        color_scheme_seed="#818CF8",  # Lighter Indigo for dark mode contrast
+        font_family=literature_font_stack,
         use_material3=True,
-        scaffold_bgcolor="#0F172A",
+        scaffold_bgcolor="#0B0F19",  # Deeper sleek dark background
+        visual_density=ft.VisualDensity.COMFORTABLE,
+        page_transitions=ft.PageTransitionsTheme(
+            macos=ft.PageTransitionTheme.FADE_UPWARDS,
+            windows=ft.PageTransitionTheme.FADE_UPWARDS,
+        ),
     )
     page.theme_mode = ft.ThemeMode.LIGHT
     page.padding = 0

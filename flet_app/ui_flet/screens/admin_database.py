@@ -15,6 +15,9 @@ class AdminDatabaseScreen(ft.Column):
         get_wordlists: Callable[[], list[str]],
         preview_wordlist: Callable[[str], Dict[str, Any]],
         on_delete_wordlist: Callable[[str], None],
+        on_download_student: Callable[[str], None],
+        on_download_session: Callable[[str, int], None],
+        on_import_wordlist: Callable[[], None],
         debug_report: Optional[Callable[..., None]] = None,
     ):
         super().__init__(expand=True)
@@ -27,6 +30,9 @@ class AdminDatabaseScreen(ft.Column):
         self.get_wordlists = get_wordlists
         self.preview_wordlist = preview_wordlist
         self.on_delete_wordlist = on_delete_wordlist
+        self.on_download_student = on_download_student
+        self.on_download_session = on_download_session
+        self.on_import_wordlist = on_import_wordlist
         self.debug_report = debug_report
         self.alignment = ft.MainAxisAlignment.START
         self.spacing = 16
@@ -85,6 +91,13 @@ class AdminDatabaseScreen(ft.Column):
                                 bgcolor=colors["success"],
                                 color=colors["primary_text"],
                             ),
+                        ft.ElevatedButton(
+                            "Import Word List",
+                            icon=ft.Icons.UPLOAD_FILE,
+                            on_click=lambda e: self.on_import_wordlist(),
+                            bgcolor=colors["primary"],
+                            color=colors["primary_text"],
+                        ),
                         ],
                         wrap=True,
                         spacing=12,
@@ -327,11 +340,24 @@ class AdminDatabaseScreen(ft.Column):
                                 spacing=4,
                                 expand=True,
                             ),
-                            ft.ElevatedButton(
-                                "Delete Student",
-                                bgcolor=colors["danger"],
-                                color=colors["primary_text"],
-                                on_click=lambda e, name=student_name: self._delete_student(name),
+                        ft.Row(
+                            controls=[
+                                ft.ElevatedButton(
+                                    "Download Record",
+                                    icon=ft.Icons.DOWNLOAD,
+                                    bgcolor=colors["primary"],
+                                    color=colors["primary_text"],
+                                    on_click=lambda e, name=student_name: self.on_download_student(name),
+                                ),
+                                ft.ElevatedButton(
+                                    "Delete Student",
+                                    icon=ft.Icons.DELETE,
+                                    bgcolor=colors["danger"],
+                                    color=colors["primary_text"],
+                                    on_click=lambda e, name=student_name: self._delete_student(name),
+                                ),
+                            ],
+                            spacing=10,
                             ),
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -358,10 +384,22 @@ class AdminDatabaseScreen(ft.Column):
                         color=colors["text"],
                         expand=True,
                     ),
-                    ft.TextButton(
-                        "Delete Session",
-                        on_click=lambda e, name=student_name, idx=session_index: self._delete_session(name, idx),
-                        style=ft.ButtonStyle(color=colors["danger"]),
+                ft.Row(
+                    controls=[
+                        ft.IconButton(
+                            icon=ft.Icons.DOWNLOAD,
+                            icon_color=colors["primary"],
+                            tooltip="Download Session",
+                            on_click=lambda e, name=student_name, idx=session_index: self.on_download_session(name, idx),
+                        ),
+                        ft.IconButton(
+                            icon=ft.Icons.DELETE,
+                            icon_color=colors["danger"],
+                            tooltip="Delete Session",
+                            on_click=lambda e, name=student_name, idx=session_index: self._delete_session(name, idx),
+                        ),
+                    ],
+                    spacing=0,
                     ),
                 ],
                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,

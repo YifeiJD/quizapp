@@ -71,7 +71,8 @@ class ResultsScreen(ft.Container):
             padding=24,
             bgcolor=colors["card_bg"],
             border=ft.border.all(1, colors["card_border"]),
-            border_radius=15,
+            border_radius=20,
+            shadow=ft.BoxShadow(blur_radius=25, color="#00000014", offset=ft.Offset(0, 8)),
             content=ft.Column(
                 controls=[
                     summary_metrics,
@@ -96,7 +97,8 @@ class ResultsScreen(ft.Container):
             padding=24,
             bgcolor=colors["card_bg"],
             border=ft.border.all(1, colors["card_border"]),
-            border_radius=15,
+            border_radius=20,
+            shadow=ft.BoxShadow(blur_radius=25, color="#00000014", offset=ft.Offset(0, 8)),
             content=ft.Column(
                 controls=[
                     ft.Text(

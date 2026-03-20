@@ -156,7 +156,7 @@ def QuizScreen(page: ft.Page, quiz_engine: QuizEngine, on_complete: Callable, de
         bgcolor=colors["card_bg"],
         border_radius=20,
         border=ft.border.all(2, colors["card_border"]),
-        shadow=ft.BoxShadow(blur_radius=20, color="#0000001F"),
+        shadow=ft.BoxShadow(blur_radius=30, color="#00000014", offset=ft.Offset(0, 10)),
         # Here is where the magic happens:
         animate_scale=ft.Animation(300, ft.AnimationCurve.EASE_IN_OUT)
     )
@@ -167,7 +167,6 @@ def QuizScreen(page: ft.Page, quiz_engine: QuizEngine, on_complete: Callable, de
         text_size=20,
         autofocus=True,
         read_only=True,
-        capitalization=ft.TextCapitalization.NONE,
         autocorrect=False,
         enable_suggestions=False,
         smart_dashes_type=False,

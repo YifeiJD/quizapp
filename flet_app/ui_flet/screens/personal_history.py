@@ -18,7 +18,6 @@ class PersonalHistoryScreen(ft.Column):
         self.sessions = sessions
         self.on_back = on_back
         self.debug_report = debug_report
-        self.word_sections: Dict[str, Dict[str, ft.Control]] = {}
 
         self.alignment = ft.MainAxisAlignment.START
         self.spacing = 16
@@ -46,7 +45,7 @@ class PersonalHistoryScreen(ft.Column):
                 key = (chi, correct)
                 label = f"{chi} -> {correct}"
                 tested_words[key] = label
-                if result.get("is_correct"):
+                if result.get("is_correct") or result.get("status") == "correct":
                     learned_words[key] = label
                 else:
                     wrong_words[key] = label
@@ -70,16 +69,21 @@ class PersonalHistoryScreen(ft.Column):
                 color=colors["muted"],
             ),
             self._build_summary_card(stats),
-            self._build_word_section("Distinct Words Tested", stats["tested_words"], "tested"),
-            self._build_word_section("Words Learned", stats["learned_words"], "learned"),
-            self._build_word_section("Words Gotten Wrong", stats["wrong_words"], "wrong"),
+            
+            # Action buttons for cumulative word lists
+            ft.ResponsiveRow(
+                controls=[
+                    self._build_word_list_button("Distinct Words Tested", stats["tested_words"], colors["primary"], ft.Icons.LIST_ALT),
+                    self._build_word_list_button("Words Learned", stats["learned_words"], colors["success"], ft.Icons.CHECK_CIRCLE_OUTLINE),
+                    self._build_word_list_button("Words Gotten Wrong", stats["wrong_words"], colors["danger"], ft.Icons.ERROR_OUTLINE),
+                ],
+                spacing=10,
+                run_spacing=10,
+            ),
+            
             ft.Divider(height=8, color="transparent"),
             ft.Text("Session Timeline", size=22, weight=ft.FontWeight.BOLD, color=colors["text"]),
             ft.Column(controls=session_rows, spacing=10),
-            ft.Row(
-                controls=[ft.ElevatedButton("Back to Settings", on_click=lambda e: self.on_back())],
-                alignment=ft.MainAxisAlignment.END,
-            ),
         ]
 
     def _build_summary_card(self, stats: Dict[str, Any]) -> ft.Control:
@@ -111,68 +115,53 @@ class PersonalHistoryScreen(ft.Column):
             ),
         )
 
-    def _build_word_section(self, title: str, words: List[str], section_key: str) -> ft.Control:
+    def _build_word_list_button(self, title: str, words: List[str], color: str, icon: str) -> ft.Control:
+        return ft.Container(
+            col={"sm": 12, "md": 4},
+            content=ft.ElevatedButton(
+                content=ft.Row([
+                    ft.Icon(icon, size=20),
+                    ft.Text(f"{title} ({len(words)})", size=14, weight=ft.FontWeight.BOLD),
+                ], alignment=ft.MainAxisAlignment.CENTER, spacing=10),
+                style=ft.ButtonStyle(
+                    color=color,
+                    padding=20,
+                    shape=ft.RoundedRectangleBorder(radius=10),
+                ),
+                on_click=lambda _: self._show_word_list_dialog(title, words, color),
+            )
+        )
+
+    def _show_word_list_dialog(self, title: str, words: List[str], color: str) -> None:
         colors = palette(self.host_page)
-        word_controls = [ft.Text(word, color=colors["text"], selectable=True) for word in words]
+        word_controls = [ft.Text(word, color=colors["text"], selectable=True, size=14) for word in words]
         if not word_controls:
             word_controls = [ft.Text("No words recorded yet.", color=colors["muted"], italic=True)]
 
-        content = ft.Column(
-            controls=word_controls,
-            visible=False,
-            spacing=8,
-            scroll=ft.ScrollMode.AUTO,
-            height=min(240, max(80, 32 * min(len(word_controls), 6))),
-        )
-        toggle_button = ft.TextButton(
-            f"Show words ({len(words)})",
-            on_click=lambda e, key=section_key: self._toggle_word_section(key),
-        )
-        self.word_sections[section_key] = {
-            "content": content,
-            "button": toggle_button,
-            "title": title,
-            "count": len(words),
-        }
-
-        return ft.Container(
-            padding=16,
-            bgcolor=colors["card_bg"],
-            border=ft.border.all(1, colors["card_border"]),
-            border_radius=12,
+        # Get window height with a safe fallback
+        win_h = self.host_page.window.height if self.host_page.window.height else 800
+        
+        content_container = ft.Container(
             content=ft.Column(
-                controls=[
-                    ft.Row(
-                        controls=[
-                            ft.Text(title, size=18, weight=ft.FontWeight.BOLD, color=colors["text"], expand=True),
-                            ft.Text(str(len(words)), size=18, weight=ft.FontWeight.BOLD, color=colors["primary"]),
-                        ],
-                    ),
-                    toggle_button,
-                    content,
-                ],
-                spacing=10,
+                controls=word_controls,
+                scroll=ft.ScrollMode.AUTO,
+                tight=True,
+                spacing=8,
             ),
+            width=400,
         )
+        content_container.max_height = win_h * 0.6
 
-    def _toggle_word_section(self, section_key: str) -> None:
-        section = self.word_sections[section_key]
-        content = section["content"]
-        button = section["button"]
-        content.visible = not content.visible
-        button.text = (
-            f"Hide words ({section['count']})"
-            if content.visible
-            else f"Show words ({section['count']})"
+        dialog = ft.AlertDialog(
+            title=ft.Text(title, color=color, weight=ft.FontWeight.BOLD),
+            content=content_container,
+            actions=[
+                ft.TextButton("Dismiss", on_click=lambda e: self._close_dialog(dialog))
+            ],
         )
-        if self.debug_report:
-            self.debug_report(
-                "history_toggle_word_section",
-                section=section_key,
-                visible=content.visible,
-                count=section["count"],
-            )
-        self._safe_update()
+        self.host_page.overlay.append(dialog)
+        dialog.open = True
+        self.host_page.update()
 
     def _build_session_rows(self) -> List[ft.Control]:
         colors = palette(self.host_page)
@@ -189,14 +178,14 @@ class PersonalHistoryScreen(ft.Column):
         session_rows = []
         for idx, session in enumerate(reversed(self.sessions)):
             practice_attempts = session.get("practice_attempts", [])
-            mistakes_button = None
-            if session.get("mistakes"):
-                mistakes_button = ft.ElevatedButton(
-                    "View Mistakes",
-                    width=150,
-                    height=30,
-                    on_click=lambda _, m=session["mistakes"]: self._show_mistake_dialog(m),
-                )
+            
+            details_button = ft.ElevatedButton(
+                "Details",
+                width=120,
+                height=35,
+                icon=ft.Icons.LIST_ALT_OUTLINED,
+                on_click=lambda _, s=session: self._show_session_details_dialog(s),
+            )
 
             subtitle_lines = []
             if practice_attempts:
@@ -220,7 +209,7 @@ class PersonalHistoryScreen(ft.Column):
                                         color=colors["text"],
                                         expand=True,
                                     ),
-                                    mistakes_button if mistakes_button else ft.Container(width=0),
+                                    details_button,
                                 ],
                                 alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                                 vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -232,43 +221,77 @@ class PersonalHistoryScreen(ft.Column):
                         ],
                         spacing=6,
                     ),
-                    padding=10,
-                    border_radius=8,
+                    padding=12,
+                    border_radius=10,
                     bgcolor=colors["card_bg"] if idx % 2 == 0 else colors["card_alt_bg"],
                     border=ft.border.all(1, colors["card_border"]),
                 )
             )
         return session_rows
 
-    def _show_mistake_dialog(self, mistakes: List[Tuple[str, str]]) -> None:
-        if self.debug_report:
-            self.debug_report("history_view_mistakes", count=len(mistakes))
+    def _show_session_details_dialog(self, session: Dict[str, Any]) -> None:
+        """Show a detailed pop-up of all words in a specific session."""
         colors = palette(self.host_page)
-        content = "WORDS TO REVIEW:\n" + "-" * 20 + "\n"
-        for chi, correct in mistakes:
-            content += f"❌ {chi} -> {correct}\n"
+        results_log = session.get("results_log", []) or session.get("log", [])
+        
+        learned_items = []
+        missed_items = []
+        
+        for item in results_log:
+            chi = item.get("chi", "N/A")
+            correct = item.get("correct", "N/A")
+            entry = f"{chi} -> {correct}"
+            if item.get("is_correct") or item.get("status") == "correct":
+                learned_items.append(ft.Text(f"✅ {entry}", color=colors["success"], size=14))
+            else:
+                missed_items.append(ft.Text(f"❌ {entry}", color=colors["danger"], size=14))
 
-        mistake_dialog = ft.AlertDialog(
-            modal=True,
-            title=ft.Text("Mistake Review", color=colors["text"]),
+        content_controls = []
+        
+        if learned_items:
+            content_controls.append(ft.Text("LEARNED WORDS:", weight=ft.FontWeight.BOLD, color=colors["success"]))
+            content_controls.extend(learned_items)
+            content_controls.append(ft.Divider(height=10, color="transparent"))
+            
+        if missed_items:
+            content_controls.append(ft.Text("MISSED WORDS:", weight=ft.FontWeight.BOLD, color=colors["danger"]))
+            content_controls.extend(missed_items)
+            
+        if not content_controls:
+            content_controls.append(ft.Text("No word data available for this session.", italic=True, color=colors["muted"]))
+
+        content_container = ft.Container(
             content=ft.Column(
-                [ft.Text(content, font_family="monospace", color=colors["text"])],
+                controls=content_controls,
                 scroll=ft.ScrollMode.AUTO,
                 tight=True,
+                spacing=5,
             ),
-            actions=[],
-            actions_alignment=ft.MainAxisAlignment.END,
+            width=400,
         )
-        mistake_dialog.actions = [
-            ft.TextButton("Close", on_click=lambda e: self._close_dialog(mistake_dialog)),
-        ]
+        content_container.max_height = page_height_helper(self.host_page) * 0.6
 
-        self.host_page.overlay.append(mistake_dialog)
-        mistake_dialog.open = True
+        dialog = ft.AlertDialog(
+            title=ft.Text(f"Session: {session.get('date', 'Unknown')}", color=colors["text"]),
+            content=content_container,
+            actions=[
+                ft.TextButton("Dismiss", on_click=lambda e: self._close_dialog(dialog))
+            ],
+        )
+        
+        self.host_page.overlay.append(dialog)
+        dialog.open = True
         self.host_page.update()
 
-    def _close_dialog(self, dialog):
+    def _close_dialog(self, dialog: ft.AlertDialog) -> None:
         if self.debug_report:
-            self.debug_report("history_close_mistakes_dialog")
+            self.debug_report("history_close_dialog")
         dialog.open = False
         self.host_page.update()
+
+
+def page_height_helper(page: ft.Page) -> float:
+    try:
+        return page.window.height or 800
+    except:
+        return 800

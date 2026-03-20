@@ -50,11 +50,6 @@ class SessionSummaryScreen(ft.Column):
                 bgcolor=colors["primary"],
                 color=colors["primary_text"],
             ),
-
-            ft.Row(
-                [ft.ElevatedButton("← Return to Menu", on_click=self.on_home)],
-                alignment=ft.MainAxisAlignment.CENTER
-            )
         ]
 
     def _build_stat_card(self, title: str, value: str) -> ft.Column:

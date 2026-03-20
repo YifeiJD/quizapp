@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 
 from core.database import StudentDatabase
 from core.file_parser import VocabFileParser
@@ -14,9 +15,9 @@ class AppServices:
     spell: SpellChecker
 
 
-def build_services() -> AppServices:
+def build_services(logger: logging.Logger) -> AppServices:
     return AppServices(
-        db=StudentDatabase(),
-        file_parser=VocabFileParser(),
+        db=StudentDatabase(logger=logger),
+        file_parser=VocabFileParser(logger=logger),
         spell=SpellChecker(language="en"),
     )

@@ -78,14 +78,17 @@ class QuizConfigScreen:
 
             # Timer Logic
             if choice == "Custom":
-                time_limit = int(custom_val) if custom_val else 10
+                # Robustly parse numeric value (e.g., "5 s" -> 5)
+                clean_custom = "".join(filter(str.isdigit, custom_val))
+                time_limit = int(clean_custom) if clean_custom else 10
             elif choice == "∞":
                 time_limit = 0
             else:
-                time_limit = int(choice.replace("s", ""))
+                time_limit = int(choice.replace("s", "").strip())
 
             # Count Logic
-            count = int(count_val) if count_val else self.total_available
+            clean_count = "".join(filter(str.isdigit, count_val))
+            count = int(clean_count) if clean_count else self.total_available
             if count > self.total_available or count <= 0:
                 messagebox.showwarning("Invalid Amount", f"Please enter a number between 1 and {self.total_available}.")
                 return

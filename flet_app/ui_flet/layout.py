@@ -136,10 +136,13 @@ class AppLayout(ft.Row):
         self._safe_update()
 
     def _safe_update(self) -> None:
-        if getattr(self, "page", None) is None or getattr(self, "uid", None) is None:
-            return
         try:
+            if self.page is None or self.uid is None:
+                return
             self.update()
+        except (RuntimeError, AttributeError):
+            # Control not added to page yet, or page not accessible
+            pass
         except Exception:
             pass
 
