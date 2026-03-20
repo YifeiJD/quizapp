@@ -166,7 +166,7 @@ class VocabQuizApp:
         
         # Load vocab list
         file_path = os.path.join(self.file_parser.save_dir, selected_file)
-        self.current_vocab = self.file_parser.parse_file(file_path)
+        self.current_vocab = self.file_parser.parse_file_or_raise_tk_error(file_path)
         
         if not self.current_vocab:
             messagebox.showerror("Error", "The selected file is empty or formatted incorrectly (use: word, definition).")
@@ -223,68 +223,83 @@ class VocabQuizApp:
         
         # Initialize timer service
         self._setup_timer_service()
-        
+
         # Re-enable timer since _clear_main stopped it
         if self.quiz_engine:
             self.quiz_engine.timer_running = True
-        
-        # Start quiz
-        self._show_next_question()
-        # Update timer bar for first question
-        self.current_screen.update_timer(self.quiz_engine.get_timer_progress())
+
+        # Show first question and start timer
+        self._show_current_question()
         if self.timer_service and self.quiz_engine and self.quiz_engine.word_time_limit > 0:
             self.timer_service.start()
 
-    def _show_next_question(self) -> None:
-        """Show next question or finalize quiz."""
-        if not self.quiz_engine:
+    def _show_current_question(self) -> None:
+        """Show current question on quiz screen."""
+        if not self.quiz_engine or not isinstance(self.current_screen, QuizScreen):
             return
-            
-        # Get current question first (don't advance yet)
+
         current, total = self.quiz_engine.get_progress()
         if current > total:
             self._finalize_quiz()
             return
-            
+
         chi, _ = self.quiz_engine.get_current_word()
-        
         self.current_screen.update_progress(current, total)
         self.current_screen.show_question(chi)
         self.current_screen.update_timer(self.quiz_engine.get_timer_progress())
-        
-        # Advance index for next question
+
+    def _advance_to_next_question(self) -> None:
+        """Advance to next question or finalize quiz."""
+        if not self.quiz_engine:
+            return
+
         if not self.quiz_engine.next_question():
             self._finalize_quiz()
+            return
 
-    def _handle_answer_submit(self, user_input: str) -> None:
+        self.quiz_engine.timer_running = True
+        if self.timer_service and self.quiz_engine.word_time_limit > 0:
+            self.timer_service.start()
+
+        self._show_current_question()
+
+    def _handle_answer_submit(self, user_input: str, is_timeout: bool = False) -> None:
         """Handle answer submission."""
         if not self.quiz_engine or self.quiz_engine.is_waiting_for_next:
             return
-            
-        result = self.quiz_engine.check_answer(user_input)
-        
+
+        result = self.quiz_engine.check_answer(user_input, is_timeout=is_timeout)
+
         # Show feedback
         feedback_color = "#16a34a" if result["is_correct"] else "#dc2626"
         if result["skipped"]:
             feedback_color = "#64748b"
-            
+
         self.current_screen.animate_feedback(result["correct"], feedback_color)
-        
+
+        # Pause timer while displaying feedback
+        if self.timer_service:
+            self.timer_service.stop()
+
         # Auto advance to next question
-        self.root.after(1500, self._show_next_question)
+        self.root.after(1500, self._advance_to_next_question)
 
     def _handle_skip_question(self) -> None:
         """Handle question skip."""
         if not self.quiz_engine or self.quiz_engine.is_waiting_for_next:
             return
-            
+
         result = self.quiz_engine.check_answer("", skipped=True)
-        
+
         # Show feedback
         self.current_screen.animate_feedback(result["correct"], "#64748b")
-        
+
+        # Pause timer while displaying feedback
+        if self.timer_service:
+            self.timer_service.stop()
+
         # Auto advance to next question
-        self.root.after(1500, self._show_next_question)
+        self.root.after(1500, self._advance_to_next_question)
 
     def _finalize_quiz(self) -> None:
         """Finalize quiz and show results."""

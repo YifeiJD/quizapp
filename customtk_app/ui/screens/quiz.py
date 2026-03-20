@@ -49,7 +49,7 @@ class QuizScreen:
                                       placeholder_text="Type answer here...", justify="center")
         self.entry_ans.pack(pady=10, fill="x")
         self.entry_ans.focus_set()
-        self.entry_ans.bind("<Return>", lambda e: self._handle_submit())
+        self.entry_ans.bind("<Return>", self._handle_enter_key)
 
         # Submit Button
         self.btn_submit = ctk.CTkButton(self.master, text="Check Answer",
@@ -62,6 +62,17 @@ class QuizScreen:
                                       fg_color="#64748b", height=40,
                                       command=self.on_skip)
         self.btn_skip.pack(fill="x", pady=5)
+
+    def _handle_enter_key(self, e=None) -> None:
+        """Handle Enter key - submit if text exists, skip if empty."""
+        if self.entry_ans:
+            user_input = self.entry_ans.get().strip()
+            if user_input:
+                # If there's text, submit
+                self._handle_submit()
+            else:
+                # If empty, skip
+                self.on_skip()
 
     def _handle_submit(self) -> None:
         """Handle answer submission."""

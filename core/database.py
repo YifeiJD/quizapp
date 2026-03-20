@@ -26,6 +26,10 @@ class StudentDatabase:
         """Get student data by name."""
         return self.database.get(name)
 
+    def get_all_students(self) -> Dict[str, Any]:
+        """Return a shallow copy of the full student database."""
+        return dict(self.database)
+
     def update_student(self, name: str, data: Dict[str, Any]) -> None:
         """Update student data, creating the entry if it doesn't exist."""
         if name not in self.database:
@@ -42,3 +46,24 @@ class StudentDatabase:
         self.database[name]["sessions"].append(session_data)
         self.database[name]["total_words_learned"] += session_data["score"]
         self.save()
+
+    def delete_student(self, name: str) -> bool:
+        """Delete a student and all associated session records."""
+        if name not in self.database:
+            return False
+        del self.database[name]
+        self.save()
+        return True
+
+    def delete_session(self, name: str, session_index: int) -> bool:
+        """Delete one saved session and recalculate learned totals."""
+        student = self.database.get(name)
+        if not student:
+            return False
+        sessions = student.get("sessions", [])
+        if session_index < 0 or session_index >= len(sessions):
+            return False
+        del sessions[session_index]
+        student["total_words_learned"] = sum(session.get("score", 0) for session in sessions)
+        self.save()
+        return True

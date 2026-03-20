@@ -6,7 +6,7 @@ from core.quiz_engine import QuizEngine
 class TimerService:
     """Standalone timer service that manages quiz timer ticks and UI updates."""
     
-    def __init__(self, root: tk.Tk, quiz_engine: QuizEngine, on_timer_update: Callable[[float], None], on_answer_submit: Callable[[str], None]):
+    def __init__(self, root: tk.Tk, quiz_engine: QuizEngine, on_timer_update: Callable[[float], None], on_answer_submit: Callable[[str, bool], None]):
         """
         Initialize timer service.
 
@@ -47,16 +47,15 @@ class TimerService:
             return
              
         # Update timer state
-        if self.quiz_engine.timer_tick():
-            # Time is up, auto-submit empty answer to trigger timeout penalty
-            self.stop()
-            # Auto-submit for timeout
-            if self.quiz_engine and not self.quiz_engine.is_waiting_for_next:
-                self.on_answer_submit("", is_timeout=True)
-             
-        # Update UI
+        time_up = self.quiz_engine.timer_tick()
         progress = self.quiz_engine.get_timer_progress()
         self.on_timer_update(progress)
+
+        if time_up:
+            # Time is up, auto-submit empty answer to trigger timeout penalty
+            self.stop()
+            if self.quiz_engine and not self.quiz_engine.is_waiting_for_next:
+                self.on_answer_submit("", is_timeout=True)
         
         # Schedule next tick if still running
         if self._is_running and self.quiz_engine.timer_running:
